@@ -2,6 +2,7 @@
 // from a table of one color per serial number.
 
 struct View {
+    center: vec2<i32>,
     clip_per_unit: f32,
     pixels_per_unit: f32,
     radius: f32,
@@ -57,7 +58,8 @@ fn disk_varying(index: u32, position: vec2<i32>, color: vec3<f32>) -> DiskVaryin
     // One extra pixel leaves room for the antialiased rim.
     let offset_pixels = corner_of_strip(index) * (radius_pixels + 1.0);
     let clip_per_pixel = view.clip_per_unit / view.pixels_per_unit;
-    let center = vec2<f32>(position) * view.clip_per_unit - 1.0;
+    // Differences of positions are exact, and only they turn into floats.
+    let center = vec2<f32>(position - view.center) * view.clip_per_unit;
 
     var out: DiskVarying;
     out.clip = vec4<f32>(center + offset_pixels * clip_per_pixel, 0.0, 1.0);

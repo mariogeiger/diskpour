@@ -29,16 +29,22 @@ reports the physics cost per frame.
 cargo run --release --example frames -- 0 60 15 2160 | ffmpeg -f rawvideo -pix_fmt rgba -s 2160x2160 -r 60 -i - out.mp4
 ```
 
-renders a stretch of the pour to video, at any playback speed. And
+renders a stretch of the pour to video, at any playback speed. `--camera` zooms with
+the GPU, so disks stay sharp: `--camera 0=.5,.5,1 2=.5,.5,1 5=.5,.06,10` holds the
+whole box for two seconds, then moves gently to a tenth of it at the bottom. And
 
 ```bash
 cargo run --release --example paint -- 80 picture.png paint.rgba
-RAYON_NUM_THREADS=1 cargo run --release --example frames -- 0 80 15 2160 paint.rgba | ffmpeg -f rawvideo -pix_fmt rgba -s 2160x2160 -r 60 -i - replay.mp4
+RAYON_NUM_THREADS=1 cargo run --release --example frames -- 0 80 15 2160 --paint paint.rgba | ffmpeg -f rawvideo -pix_fmt rgba -s 2160x2160 -r 60 -i - replay.mp4
 ```
 
 colors each disk by where it ends up, then replays the pour on another thread count:
 the picture forms only if the replay reproduces the run to the last bit. Both print
 a fingerprint of the final state to compare.
+
+`cargo run --release --example grains -- 80 grains.rgba` makes a table for `--paint`
+that colors each disk by the orientation of its lattice. The thin dark lines in a
+settled pile turn out to be the boundaries between crystal grains.
 
 ## Design principles
 

@@ -1,6 +1,7 @@
 //! Runs a pour without a window, draws one frame to a PNG, and reports the cost
 //! of the physics: `still SECONDS OUTPUT.png [DISKS] [STEPS_PER_SECOND] [PIXELS]`.
 
+use diskpour::camera::Camera;
 use diskpour::offscreen::Offscreen;
 use diskpour::pour::Pour;
 use diskpour::render::Palette;
@@ -51,7 +52,8 @@ fn main() {
         }
     });
 
-    let image = Offscreen::new(&pour, Palette::Age, pixels).draw(&world);
+    let image =
+        Offscreen::new(&pour, Palette::Age, pixels).draw(&world, Camera::whole(pour.side()));
     write_png(output, pixels, &image);
 }
 

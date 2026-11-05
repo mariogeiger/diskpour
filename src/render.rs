@@ -6,7 +6,8 @@
 //! The target must be display-referred (not sRGB-encoding), since the palette is
 //! written in the display values of the reference picture.
 
-use crate::disk::{DIAMETER, Disk, RADIUS};
+use crate::camera::Camera;
+use crate::disk::{Disk, RADIUS};
 use crate::pour::Pour;
 use crate::world::World;
 use bytemuck::{Pod, Zeroable};
@@ -29,6 +30,7 @@ pub enum Palette<'a> {
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct View {
+    center: [i32; 2],
     clip_per_unit: f32,
     pixels_per_unit: f32,
     radius: f32,
@@ -36,6 +38,7 @@ struct View {
     now: u32,
     rows: u32,
     period: u32,
+    _padding: u32,
 }
 
 /// The GPU state that draws one pour.
@@ -47,7 +50,6 @@ pub struct Renderer {
     instances: wgpu::Buffer,
     view: wgpu::Buffer,
     bindings: wgpu::BindGroup,
-    side: f32,
     crossings_per_step: f32,
     rows: u32,
     period: u32,
@@ -205,26 +207,28 @@ impl Renderer {
             instances,
             view,
             bindings,
-            side: pour.arena.columns as f32 * DIAMETER as f32,
             crossings_per_step: pour.muzzle_speed as f32 / pour.side() as f32,
             rows: pour.rows,
             period: pour.period,
         }
     }
 
-    /// Draws `world` into `target`, whose size is `[width, height]` in pixels.
-    pub fn draw(&self, target: &wgpu::TextureView, size: [u32; 2], world: &World) {
+    /// Draws what `camera` sees of `world` into `target`, whose size is
+    /// `[width, height]` in pixels.
+    pub fn draw(&self, target: &wgpu::TextureView, size: [u32; 2], world: &World, camera: Camera) {
         let [width, height] = size.map(|pixels| pixels as f32);
         let shorter = width.min(height);
         let box_pixels = shorter * (1.0 - 2.0 * FRAME);
         let view = View {
-            clip_per_unit: 2.0 / self.side,
-            pixels_per_unit: box_pixels / self.side,
+            center: camera.center.map(|c| c.round() as i32),
+            clip_per_unit: (2.0 / camera.side) as f32,
+            pixels_per_unit: (f64::from(box_pixels) / camera.side) as f32,
             radius: RADIUS as f32,
             crossings_per_step: self.crossings_per_step,
             now: world.now(),
             rows: self.rows,
             period: self.period,
+            _padding: 0,
         };
         self.queue
             .write_buffer(&self.view, 0, bytemuck::bytes_of(&view));

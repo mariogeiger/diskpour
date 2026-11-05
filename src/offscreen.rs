@@ -3,6 +3,7 @@
 //! The target is display-referred RGBA, so the bytes are what a screen would show.
 //! Everything that makes pictures without a window goes through here.
 
+use crate::camera::Camera;
 use crate::pour::Pour;
 use crate::render::{Palette, Renderer};
 use crate::world::World;
@@ -68,10 +69,11 @@ impl Offscreen {
         }
     }
 
-    /// Draws `world` and returns tightly packed RGBA bytes, top row first.
-    pub fn draw(&self, world: &World) -> Vec<u8> {
+    /// Draws what `camera` sees of `world` and returns tightly packed RGBA bytes, top
+    /// row first.
+    pub fn draw(&self, world: &World, camera: Camera) -> Vec<u8> {
         let size = [self.pixels, self.pixels];
-        self.renderer.draw(&self.target, size, world);
+        self.renderer.draw(&self.target, size, world, camera);
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
         encoder.copy_texture_to_buffer(

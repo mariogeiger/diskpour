@@ -1,6 +1,6 @@
 [package]
 name = "diskpour"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Realtime jet of 100,000 colliding disks on a CPU, drawn with wgpu."
 publish = false

@@ -4,6 +4,7 @@
 //! Space pauses, R restarts, Escape quits. The title bar reports the frame rate,
 //! the physics cost per frame, and the speed relative to real time.
 
+use diskpour::camera::Camera;
 use diskpour::pour::Pour;
 use diskpour::render::{Palette, Renderer};
 use diskpour::world::World;
@@ -41,6 +42,7 @@ struct Display {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     renderer: Renderer,
+    camera: Camera,
 }
 
 impl Display {
@@ -79,6 +81,7 @@ impl Display {
         config.format = config.format.remove_srgb_suffix();
         surface.configure(&device, &config);
         let renderer = Renderer::new(&device, &queue, config.format, pour, Palette::Age);
+        let camera = Camera::whole(pour.side());
         Self {
             window,
             surface,
@@ -86,6 +89,7 @@ impl Display {
             queue,
             config,
             renderer,
+            camera,
         }
     }
 
@@ -112,7 +116,7 @@ impl Display {
         };
         let target = frame.texture.create_view(&Default::default());
         let size = [self.config.width, self.config.height];
-        self.renderer.draw(&target, size, world);
+        self.renderer.draw(&target, size, world, self.camera);
         self.window.pre_present_notify();
         self.queue.present(frame);
     }
