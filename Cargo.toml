@@ -1,0 +1,25 @@
+[package]
+name = "diskpour"
+version = "0.1.0"
+edition = "2024"
+description = "Realtime jet of 100,000 colliding disks on a CPU, drawn with wgpu."
+publish = false
+
+[dependencies]
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "1"
+rayon = "1"
+wgpu = "30"
+wide = "1.7.1"
+winit = "0.30"
+
+[dev-dependencies]
+png = "0.18"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 2
