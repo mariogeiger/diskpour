@@ -1,7 +1,8 @@
 //! Opens a window and runs the pour in real time:
 //! `diskpour [DISKS] [STEPS_PER_SECOND]`.
 //!
-//! Space pauses, R restarts, Escape quits.
+//! Space pauses, R restarts, Escape quits. The title bar reports the frame rate,
+//! the physics cost per frame, and the speed relative to real time.
 
 use diskpour::pour::Pour;
 use diskpour::render::Renderer;
@@ -16,12 +17,18 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 const DEFAULT_DISKS: u32 = 100_000;
-/// Twenty steps per 60 Hz frame.
-const DEFAULT_STEPS_PER_SECOND: u32 = 1200;
+/// Fifteen steps per 60 Hz frame.
+const DEFAULT_STEPS_PER_SECOND: u32 = 900;
 
-/// The most real time a single frame may catch up on. A machine too slow to keep
-/// up runs in slow motion instead of falling ever further behind.
-const MOST_SECONDS_PER_FRAME: f64 = 0.05;
+/// The most time a frame may spend on physics, leaving the rest of a 60 Hz frame
+/// for drawing. Steps that do not fit are dropped, so a machine too slow to keep up
+/// runs in slow motion at a smooth frame rate instead of falling ever further behind.
+const PHYSICS_BUDGET: Duration = Duration::from_millis(12);
+
+/// How long to wait before trying again when the window cannot be drawn to, as
+/// when it is hidden. The surface then answers at once, so nothing else paces the
+/// frame loop.
+const UNDRAWABLE_RETRY: Duration = Duration::from_millis(16);
 
 /// How often the title bar refreshes its numbers.
 const REPORT_PERIOD: Duration = Duration::from_millis(500);
@@ -98,7 +105,10 @@ impl Display {
                 self.surface.configure(&self.device, &self.config);
                 return;
             }
-            Current::Timeout | Current::Occluded | Current::Validation => return,
+            Current::Timeout | Current::Occluded | Current::Validation => {
+                std::thread::sleep(UNDRAWABLE_RETRY);
+                return;
+            }
         };
         let target = frame.texture.create_view(&Default::default());
         let size = [self.config.width, self.config.height];
@@ -112,7 +122,19 @@ impl Display {
 struct Report {
     since: Instant,
     frames: u32,
+    steps: u32,
     physics: Duration,
+}
+
+impl Report {
+    fn new() -> Self {
+        Self {
+            since: Instant::now(),
+            frames: 0,
+            steps: 0,
+            physics: Duration::ZERO,
+        }
+    }
 }
 
 struct App {
@@ -135,53 +157,58 @@ impl App {
             paused: false,
             last_frame: now,
             owed_steps: 0.0,
-            report: Report {
-                since: now,
-                frames: 0,
-                physics: Duration::ZERO,
-            },
+            report: Report::new(),
         }
     }
 
-    /// Steps the world by the real time that passed since the last frame.
+    /// Steps the world by the real time that passed since the last frame, as far
+    /// as the budget allows. Driving the steps from a worker thread keeps each
+    /// parallel region from paying to wake this thread when it ends.
     fn catch_up(&mut self) {
-        let now = Instant::now();
-        let elapsed = now - self.last_frame;
-        self.last_frame = now;
+        let started = Instant::now();
+        let elapsed = started - self.last_frame;
+        self.last_frame = started;
         if self.paused {
             return;
         }
-        let rate = f64::from(self.pour.steps_per_second);
-        self.owed_steps += elapsed.as_secs_f64().min(MOST_SECONDS_PER_FRAME) * rate;
+        self.owed_steps += elapsed.as_secs_f64() * f64::from(self.pour.steps_per_second);
         let due = self.owed_steps as u32;
         self.owed_steps -= f64::from(due);
-        for _ in 0..due {
-            self.pour.advance(&mut self.world);
-        }
-        self.report.physics += now.elapsed();
+        let (pour, world) = (&self.pour, &mut self.world);
+        self.report.steps += rayon::scope(|_| {
+            let mut taken = 0;
+            while taken < due && started.elapsed() < PHYSICS_BUDGET {
+                pour.advance(world);
+                taken += 1;
+            }
+            taken
+        });
+        self.report.physics += started.elapsed();
     }
 
     fn update_title(&mut self) {
         self.report.frames += 1;
-        let elapsed = self.report.since.elapsed();
-        if elapsed < REPORT_PERIOD {
+        let elapsed = self.report.since.elapsed().as_secs_f64();
+        if elapsed < REPORT_PERIOD.as_secs_f64() {
             return;
         }
-        let frames = self.report.frames;
+        let Report {
+            frames,
+            steps,
+            physics,
+            ..
+        } = self.report;
         let title = format!(
-            "diskpour · {} disks · {:.0} fps · physics {:.1} ms",
+            "diskpour · {} disks · {:.0} fps · physics {:.1} ms · {:.0}% speed",
             self.world.disks().len(),
-            f64::from(frames) / elapsed.as_secs_f64(),
-            self.report.physics.as_secs_f64() * 1e3 / f64::from(frames),
+            f64::from(frames) / elapsed,
+            physics.as_secs_f64() * 1e3 / f64::from(frames),
+            100.0 * f64::from(steps) / (elapsed * f64::from(self.pour.steps_per_second)),
         );
         if let Some(display) = &self.display {
             display.window.set_title(&title);
         }
-        self.report = Report {
-            since: Instant::now(),
-            frames: 0,
-            physics: Duration::ZERO,
-        };
+        self.report = Report::new();
     }
 
     fn press(&mut self, key: &Key, event_loop: &ActiveEventLoop) {
@@ -233,7 +260,21 @@ impl ApplicationHandler for App {
     }
 }
 
+/// Asks the scheduler to treat this thread as drawing the user's frames. On Apple
+/// silicon this is what keeps the physics on the performance cores.
+fn request_interactive_priority() {
+    #[cfg(target_os = "macos")]
+    // SAFETY: the call takes plain values and affects only the calling thread.
+    unsafe {
+        libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE, 0);
+    }
+}
+
 fn main() {
+    rayon::ThreadPoolBuilder::new()
+        .start_handler(|_| request_interactive_priority())
+        .build_global()
+        .expect("the physics threads should start");
     let mut arguments = std::env::args().skip(1).map(|text| {
         text.parse()
             .expect("usage: diskpour [DISKS] [STEPS_PER_SECOND]")

@@ -19,7 +19,7 @@ fn main() {
             text.parse().expect("counts should be whole numbers")
         })
     };
-    let (disks, steps_per_second, pixels) = (count(0, 100_000), count(1, 1200), count(2, 889));
+    let (disks, steps_per_second, pixels) = (count(0, 100_000), count(1, 900), count(2, 889));
 
     let pour = Pour::new(disks, steps_per_second);
     let mut world = World::new(pour.arena);
@@ -31,23 +31,26 @@ fn main() {
 
     // The cost grows with the number of disks, so it is reported once per second
     // of simulated time, as milliseconds per 60 Hz frame.
-    let mut second_started = Instant::now();
-    for step in 1..=steps {
-        pour.advance(&mut world);
-        if step % steps_per_second == 0 || step == steps {
-            let span = (step - 1) % steps_per_second + 1;
-            let per_frame =
-                second_started.elapsed().as_secs_f64() * 1e3 * f64::from(steps_per_second)
-                    / 60.0
-                    / f64::from(span);
-            println!(
-                "t={:5.1} s  {:6} disks  {per_frame:6.2} ms per frame",
-                f64::from(step) / f64::from(steps_per_second),
-                world.disks().len(),
-            );
-            second_started = Instant::now();
+    // Steps run on a worker thread, as in the window, so the costs are comparable.
+    rayon::scope(|_| {
+        let mut second_started = Instant::now();
+        for step in 1..=steps {
+            pour.advance(&mut world);
+            if step % steps_per_second == 0 || step == steps {
+                let span = (step - 1) % steps_per_second + 1;
+                let per_frame =
+                    second_started.elapsed().as_secs_f64() * 1e3 * f64::from(steps_per_second)
+                        / 60.0
+                        / f64::from(span);
+                println!(
+                    "t={:5.1} s  {:6} disks  {per_frame:6.2} ms per frame",
+                    f64::from(step) / f64::from(steps_per_second),
+                    world.disks().len(),
+                );
+                second_started = Instant::now();
+            }
         }
-    }
+    });
 
     let image = draw(&pour, &world, pixels);
     write_png(output, pixels, &image);

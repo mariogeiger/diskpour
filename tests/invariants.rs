@@ -45,7 +45,7 @@ fn sorted(mut disks: Vec<Disk>) -> Vec<Disk> {
 
 #[test]
 fn stream_in_flight_follows_the_parabola_to_the_last_bit() {
-    let pour = Pour::new(100_000, 1200);
+    let pour = Pour::new(100_000, 900);
     let mut world = World::new(pour.arena);
     let (speed, gravity) = (i64::from(pour.muzzle_speed), i64::from(pour.arena.gravity));
     // Well before the first column reaches the floor or the right wall.
@@ -97,7 +97,7 @@ fn contacts_conserve_momentum_exactly() {
 
 #[test]
 fn thread_count_does_not_change_a_single_bit() {
-    let pour = Pour::new(4000, 1200);
+    let pour = Pour::new(4000, 900);
     let simulate = |threads: usize| {
         let pool = ThreadPoolBuilder::new()
             .num_threads(threads)
@@ -137,10 +137,10 @@ fn mirroring_the_box_mirrors_the_motion_exactly() {
 
 #[test]
 fn a_full_pour_keeps_every_disk_inside_the_box_and_settles() {
-    let pour = Pour::new(5000, 1200);
+    let pour = Pour::new(5000, 900);
     let mut world = World::new(pour.arena);
     let pouring = pour.disks / pour.rows * pour.period;
-    for _ in 0..pouring + 12 * 1200 {
+    for _ in 0..pouring + 12 * 900 {
         pour.advance(&mut world);
     }
     let disks = world.disks();

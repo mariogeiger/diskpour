@@ -25,7 +25,7 @@ const SETTLED_LEVEL: f64 = 0.75;
 const SETTLED_CELL_AREA: f64 = 0.866_025_403_784_438_6;
 /// The time a disk takes to cross the box at muzzle speed. Slower is stiffer: it
 /// lowers the speed per step, which is what sets how far disks sink into a pile.
-const CROSSING_SECONDS: f64 = 3.0;
+const CROSSING_SECONDS: f64 = 4.0;
 
 /// The constants of one pour.
 #[derive(Clone, Copy, Debug)]

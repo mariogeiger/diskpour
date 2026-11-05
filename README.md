@@ -14,11 +14,12 @@ cargo run --release
 ```
 
 `diskpour [DISKS] [STEPS_PER_SECOND]` changes the resolution and the stiffness.
-Space pauses, R restarts, Escape quits. The title bar shows the frame rate and the
-physics cost per frame. A machine that cannot keep up runs in slow motion.
+Space pauses, R restarts, Escape quits. The title bar shows the frame rate, the
+physics cost per frame, and the speed relative to real time. A machine that cannot
+keep up runs in slow motion at a smooth frame rate.
 
 ```bash
-cargo run --release --example still -- 9.7 frame.png
+cargo run --release --example still -- 13.5 frame.png
 ```
 
 draws the state at a given simulated second to a PNG without opening a window, and
