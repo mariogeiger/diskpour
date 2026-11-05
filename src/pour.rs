@@ -89,6 +89,11 @@ impl Pour {
         self.arena.columns as i32 * DIAMETER
     }
 
+    /// The step at which the disk with this serial number was born.
+    pub fn birth_of(&self, serial: u32) -> u32 {
+        serial / self.rows * self.period
+    }
+
     /// The disks born at step `now`.
     pub fn emitted_at(&self, now: u32) -> impl Iterator<Item = Disk> + use<> {
         let due = now.is_multiple_of(self.period);
@@ -106,7 +111,7 @@ impl Pour {
             Disk {
                 predicted: [x + speed, y - half_gravity],
                 position: [x, y],
-                birth: now,
+                serial: (already + row as u64) as u32,
             }
         })
     }

@@ -25,6 +25,21 @@ cargo run --release --example still -- 13.5 frame.png
 draws the state at a given simulated second to a PNG without opening a window, and
 reports the physics cost per frame.
 
+```bash
+cargo run --release --example frames -- 0 60 15 2160 | ffmpeg -f rawvideo -pix_fmt rgba -s 2160x2160 -r 60 -i - out.mp4
+```
+
+renders a stretch of the pour to video, at any playback speed. And
+
+```bash
+cargo run --release --example paint -- 80 picture.png paint.rgba
+RAYON_NUM_THREADS=1 cargo run --release --example frames -- 0 80 15 2160 paint.rgba | ffmpeg -f rawvideo -pix_fmt rgba -s 2160x2160 -r 60 -i - replay.mp4
+```
+
+colors each disk by where it ends up, then replays the pour on another thread count:
+the picture forms only if the replay reproduces the run to the last bit. Both print
+a fingerprint of the final state to compare.
+
 ## Design principles
 
 - **Positions are integers.** Physics reads only their differences, so fixed point

@@ -20,6 +20,10 @@ use rayon::prelude::*;
 /// walls, reach the emitter, and scatter the newborn stream. Integer division
 /// rounds toward zero, which keeps the rule mirror symmetric.
 const WALL_FRICTION_DIVISOR: i32 = 4096;
+/// The offset basis of the 64-bit FNV-1a hash.
+const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+/// The prime of the 64-bit FNV-1a hash.
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 /// A square box with a uniform downward acceleration.
 #[derive(Clone, Copy, Debug)]
@@ -76,13 +80,22 @@ impl World {
         &self.disks
     }
 
+    /// A hash of every bit of the state, for telling whether two runs agree.
+    pub fn fingerprint(&self) -> u64 {
+        bytemuck::cast_slice::<Disk, u8>(&self.disks)
+            .iter()
+            .fold(FNV_OFFSET, |hash, &byte| {
+                (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME)
+            })
+    }
+
     /// Adds disks, bringing any that lie outside the box back inside.
     pub fn insert(&mut self, disks: impl IntoIterator<Item = Disk>) {
         let far = self.arena.far_wall();
         self.disks.extend(disks.into_iter().map(|disk| Disk {
             predicted: disk.predicted.map(|c| c.clamp(RADIUS, far)),
             position: disk.position.map(|c| c.clamp(RADIUS, far)),
-            birth: disk.birth,
+            serial: disk.serial,
         }));
     }
 
@@ -169,7 +182,7 @@ fn advance(arena: Arena, disk: Disk, push: [i32; 2]) -> Disk {
             (y + stride[1]).clamp(RADIUS, far),
         ],
         position: solved,
-        birth: disk.birth,
+        serial: disk.serial,
     }
 }
 

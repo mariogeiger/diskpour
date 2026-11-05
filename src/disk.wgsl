@@ -1,4 +1,5 @@
-// Draws the box and, over it, the disks as antialiased quads colored by age.
+// Draws the box and, over it, the disks as antialiased quads, colored by age or
+// from a table of one color per serial number.
 
 struct View {
     clip_per_unit: f32,
@@ -6,9 +7,12 @@ struct View {
     radius: f32,
     crossings_per_step: f32,
     now: u32,
+    rows: u32,
+    period: u32,
 }
 
 @group(0) @binding(0) var<uniform> view: View;
+@group(0) @binding(1) var<storage, read> paint: array<u32>;
 
 // A disk's color walks around the blue, green and red axes of RGB at a constant
 // angular speed in age, a quarter turn from each axis to the next and at constant
@@ -48,12 +52,7 @@ struct DiskVarying {
     @location(2) color: vec3<f32>,
 }
 
-@vertex
-fn disk_vertex(
-    @builtin(vertex_index) index: u32,
-    @location(0) position: vec2<i32>,
-    @location(1) birth: u32,
-) -> DiskVarying {
+fn disk_varying(index: u32, position: vec2<i32>, color: vec3<f32>) -> DiskVarying {
     let radius_pixels = view.radius * view.pixels_per_unit;
     // One extra pixel leaves room for the antialiased rim.
     let offset_pixels = corner_of_strip(index) * (radius_pixels + 1.0);
@@ -64,8 +63,27 @@ fn disk_vertex(
     out.clip = vec4<f32>(center + offset_pixels * clip_per_pixel, 0.0, 1.0);
     out.offset_pixels = offset_pixels;
     out.radius_pixels = radius_pixels;
-    out.color = color_of_age(view.now - birth);
+    out.color = color;
     return out;
+}
+
+@vertex
+fn disk_vertex_by_age(
+    @builtin(vertex_index) index: u32,
+    @location(0) position: vec2<i32>,
+    @location(1) serial: u32,
+) -> DiskVarying {
+    let birth = serial / view.rows * view.period;
+    return disk_varying(index, position, color_of_age(view.now - birth));
+}
+
+@vertex
+fn disk_vertex_by_paint(
+    @builtin(vertex_index) index: u32,
+    @location(0) position: vec2<i32>,
+    @location(1) serial: u32,
+) -> DiskVarying {
+    return disk_varying(index, position, unpack4x8unorm(paint[serial]).rgb);
 }
 
 @fragment

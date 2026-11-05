@@ -22,8 +22,9 @@ pub struct Disk {
     pub predicted: [i32; 2],
     /// Where it is at the current step, with contacts solved.
     pub position: [i32; 2],
-    /// The step it entered the world.
-    pub birth: u32,
+    /// Its place in the order of emission. It names the disk for life, because the
+    /// disks change places in the array at every step.
+    pub serial: u32,
 }
 
 /// Returns the column of a horizontal position.

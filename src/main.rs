@@ -5,7 +5,7 @@
 //! the physics cost per frame, and the speed relative to real time.
 
 use diskpour::pour::Pour;
-use diskpour::render::Renderer;
+use diskpour::render::{Palette, Renderer};
 use diskpour::world::World;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -78,7 +78,7 @@ impl Display {
             .expect("the GPU should support this window's surface");
         config.format = config.format.remove_srgb_suffix();
         surface.configure(&device, &config);
-        let renderer = Renderer::new(&device, &queue, config.format, pour);
+        let renderer = Renderer::new(&device, &queue, config.format, pour, Palette::Age);
         Self {
             window,
             surface,

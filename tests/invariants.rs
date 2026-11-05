@@ -18,12 +18,12 @@ fn cluster(arena: Arena, disks: u32) -> Vec<Disk> {
         center - spread / 2 + (state % spread as u32) as i32
     };
     (0..disks)
-        .map(|birth| {
+        .map(|serial| {
             let position = [next(), next()];
             Disk {
                 predicted: position,
                 position,
-                birth,
+                serial,
             }
         })
         .collect()
@@ -57,7 +57,7 @@ fn stream_in_flight_follows_the_parabola_to_the_last_bit() {
     assert!(world.disks().len() > 2000, "the stream must be flowing");
     let mut seen = vec![false; world.disks().len()];
     for disk in world.disks() {
-        let age = now - i64::from(disk.birth);
+        let age = now - i64::from(pour.birth_of(disk.serial));
         let row = disk.position[1] as i64 + gravity * age * age / 2 - i64::from(pour.origin[1]);
         assert_eq!(row % i64::from(DIAMETER), 0, "{disk:?}");
         let row = row / i64::from(DIAMETER);
@@ -67,10 +67,13 @@ fn stream_in_flight_follows_the_parabola_to_the_last_bit() {
             i64::from(pour.origin[0]) + speed * age,
             "{disk:?}"
         );
-        let column = i64::from(disk.birth) / i64::from(pour.period);
-        let index = (column * i64::from(pour.rows) + row) as usize;
-        assert!(!seen[index], "{disk:?}");
-        seen[index] = true;
+        assert_eq!(
+            i64::from(disk.serial) % i64::from(pour.rows),
+            row,
+            "{disk:?}"
+        );
+        assert!(!seen[disk.serial as usize], "{disk:?}");
+        seen[disk.serial as usize] = true;
     }
 }
 
@@ -124,7 +127,7 @@ fn mirroring_the_box_mirrors_the_motion_exactly() {
     let mirror = |disk: &Disk| Disk {
         predicted: [side - disk.predicted[0], disk.predicted[1]],
         position: [side - disk.position[0], disk.position[1]],
-        birth: disk.birth,
+        serial: disk.serial,
     };
     let start = cluster(arena, 3000);
     let direct = run(arena, start.clone(), 3000);
@@ -149,13 +152,10 @@ fn a_full_pour_keeps_every_disk_inside_the_box_and_settles() {
     let inside = |c: i32| (RADIUS..=far).contains(&c);
     assert!(disks.iter().all(|d| d.position.iter().copied().all(inside)));
 
-    // All disks are born once.
-    let mut births: Vec<_> = disks.iter().map(|d| d.birth).collect();
-    births.sort_unstable();
-    assert_eq!(
-        births.last().copied(),
-        Some((pour.disks - 1) / pour.rows * pour.period)
-    );
+    // Every serial number names exactly one disk.
+    let mut serials: Vec<_> = disks.iter().map(|d| d.serial).collect();
+    serials.sort_unstable();
+    assert!(serials.into_iter().eq(0..pour.disks));
 
     // The pile holds still and its disks do not sink into one another.
     let fastest = disks

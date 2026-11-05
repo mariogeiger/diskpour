@@ -3,6 +3,7 @@
 pub mod columns;
 pub mod contact;
 pub mod disk;
+pub mod offscreen;
 pub mod pour;
 pub mod render;
 pub mod world;

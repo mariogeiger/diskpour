@@ -1,7 +1,8 @@
 //! Draws a world into any color target with wgpu.
 //!
 //! The disk array is uploaded as it is, one instance per disk: the vertex shader
-//! reads each disk's position and birth directly and derives its color from age.
+//! reads each disk's position and serial number directly and derives its color
+//! from them, by age or from a table.
 //! The target must be display-referred (not sRGB-encoding), since the palette is
 //! written in the display values of the reference picture.
 
@@ -15,6 +16,15 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt};
 /// The black frame around the box, as a fraction of the target's shorter side.
 const FRAME: f32 = 12.0 / 889.0;
 
+/// What decides a disk's color.
+#[derive(Clone, Copy)]
+pub enum Palette<'a> {
+    /// Its age, in the colors of the reference picture.
+    Age,
+    /// One RGBA color per serial number, for the whole pour.
+    Paint(&'a [[u8; 4]]),
+}
+
 /// The uniform block of the shader.
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -24,6 +34,8 @@ struct View {
     radius: f32,
     crossings_per_step: f32,
     now: u32,
+    rows: u32,
+    period: u32,
 }
 
 /// The GPU state that draws one pour.
@@ -37,6 +49,8 @@ pub struct Renderer {
     bindings: wgpu::BindGroup,
     side: f32,
     crossings_per_step: f32,
+    rows: u32,
+    period: u32,
 }
 
 impl Renderer {
@@ -46,20 +60,41 @@ impl Renderer {
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
         pour: &Pour,
+        palette: Palette<'_>,
     ) -> Self {
         let shader = device.create_shader_module(wgpu::include_wgsl!("disk.wgsl"));
+        let paint = match palette {
+            Palette::Age => None,
+            Palette::Paint(colors) => {
+                assert_eq!(colors.len(), pour.disks as usize, "one color per disk");
+                Some(device.create_buffer_init(&BufferInitDescriptor {
+                    label: Some("paint"),
+                    contents: bytemuck::cast_slice(colors),
+                    usage: wgpu::BufferUsages::STORAGE,
+                }))
+            }
+        };
+        let binding = |binding, ty| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
+        let view_binding = binding(0, wgpu::BufferBindingType::Uniform);
+        let paint_binding = binding(1, wgpu::BufferBindingType::Storage { read_only: true });
+        let view_only = [view_binding];
+        let view_and_paint = [view_binding, paint_binding];
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("view"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
+            entries: if paint.is_some() {
+                &view_and_paint
+            } else {
+                &view_only
+            },
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("view"),
@@ -74,7 +109,7 @@ impl Renderer {
             },
             wgpu::VertexAttribute {
                 format: wgpu::VertexFormat::Uint32,
-                offset: offset_of!(Disk, birth) as u64,
+                offset: offset_of!(Disk, serial) as u64,
                 shader_location: 1,
             },
         ];
@@ -117,7 +152,14 @@ impl Renderer {
         };
         let box_pipeline = strip(("box_vertex", "box_fragment"), &[], None);
         let disk_pipeline = strip(
-            ("disk_vertex", "disk_fragment"),
+            (
+                if paint.is_some() {
+                    "disk_vertex_by_paint"
+                } else {
+                    "disk_vertex_by_age"
+                },
+                "disk_fragment",
+            ),
             &disk_buffers,
             Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
         );
@@ -133,14 +175,28 @@ impl Renderer {
             contents: bytemuck::bytes_of(&View::zeroed()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let bindings = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("view"),
-            layout: &layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: view.as_entire_binding(),
-            }],
-        });
+        let view_entry = wgpu::BindGroupEntry {
+            binding: 0,
+            resource: view.as_entire_binding(),
+        };
+        let bindings = match &paint {
+            None => device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("view"),
+                layout: &layout,
+                entries: &[view_entry],
+            }),
+            Some(paint) => device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("view and paint"),
+                layout: &layout,
+                entries: &[
+                    view_entry,
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: paint.as_entire_binding(),
+                    },
+                ],
+            }),
+        };
         Self {
             device: device.clone(),
             queue: queue.clone(),
@@ -151,6 +207,8 @@ impl Renderer {
             bindings,
             side: pour.arena.columns as f32 * DIAMETER as f32,
             crossings_per_step: pour.muzzle_speed as f32 / pour.side() as f32,
+            rows: pour.rows,
+            period: pour.period,
         }
     }
 
@@ -165,6 +223,8 @@ impl Renderer {
             radius: RADIUS as f32,
             crossings_per_step: self.crossings_per_step,
             now: world.now(),
+            rows: self.rows,
+            period: self.period,
         };
         self.queue
             .write_buffer(&self.view, 0, bytemuck::bytes_of(&view));
